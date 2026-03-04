@@ -1,0 +1,293 @@
+# Docker Compose file for Matrix Synapse + Locust + OpenTelemetry Stack
+# This orchestrates Synapse homeserver, Matrix Locust load tester, and OpenTelemetry collector
+# for local testing and observability
+
+# Shared network for all services
+networks:
+  matrix-network:
+    name: matrix-network
+    driver: bridge
+
+services:
+  # ==========================================
+  # Core Services - Matrix Synapse
+  # ==========================================
+
+  # PostgreSQL database for Synapse
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    container_name: synapse-postgres
+    restart: unless-stopped
+    networks:
+      - matrix-network
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-synapse}
+      POSTGRES_USER: ${POSTGRES_USER:-synapse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-654321}
+      POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale=C
+    volumes:
+      - ${PWD}/data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-synapse}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "5432:5432"
+    logging:
+      driver: ${LOGS_DRIVER:-json-file}
+      options:
+        max-size: ${LOGS_MAX_SIZE:-5m}
+        max-file: ${LOGS_MAX_FILE:-2}
+
+  # Redis cache for Synapse (recommended for performance)
+  redis:
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    container_name: synapse-redis
+    restart: unless-stopped
+    networks:
+      - matrix-network
+    volumes:
+      - ${PWD}/data/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "6379:6379"
+    logging:
+      driver: ${LOGS_DRIVER:-json-file}
+      options:
+        max-size: ${LOGS_MAX_SIZE:-5m}
+        max-file: ${LOGS_MAX_FILE:-2}
+
+  # Synapse homeserver
+  synapse:
+    image: ${SYNAPSE_IMAGE:-matrixdotorg/synapse:latest}
+    container_name: synapse-homeserver
+    user: "${SYNAPSE_UID:-1000}:${SYNAPSE_GID:-1000}"
+    restart: unless-stopped
+    networks:
+      - matrix-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    environment:
+      SYNAPSE_CONFIG_DIR: ${SYNAPSE_CONFIG_DIR:-/data}
+      SYNAPSE_CONFIG_PATH: ${SYNAPSE_CONFIG_PATH:-/data/homeserver.yaml}
+      SYNAPSE_SERVER_NAME: ${SYNAPSE_SERVER_NAME:-matrix.local}
+      SYNAPSE_REPORT_STATS: ${SYNAPSE_REPORT_STATS:-no}
+      MACAROON_SECRET_KEY: ${MACAROON_SECRET_KEY:-change-me-in-production}
+      # OpenTelemetry configuration (optional)
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_SERVICE_NAME: synapse
+      OTEL_RESOURCE_ATTRIBUTES: service.name=synapse,service.namespace=matrix-local
+    volumes:
+      - ${PWD}/data/synapse:/data
+    ports:
+      - "${SYNAPSE_PORT:-8008}:8008"
+      - "${SYNAPSE_METRICS_PORT:-9090}:9090"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8008/_matrix/client/versions || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: ${LOGS_DRIVER:-json-file}
+      options:
+        max-size: ${LOGS_MAX_SIZE:-5m}
+        max-file: ${LOGS_MAX_FILE:-2}
+
+  # ==========================================
+  # Load Testing - Matrix Locust
+  # ==========================================
+
+  # Build locust container from config Dockerfile
+  locust:
+    build:
+      context: .
+      dockerfile: ./config/Dockerfile.locust
+    image: matrix-locust-test:latest
+    pull_policy: never  # Never pull - always use local build from matrix-locust folder
+    container_name: matrix-locust
+    restart: unless-stopped
+    networks:
+      - matrix-network
+    depends_on:
+      synapse:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    develop:
+      watch:
+        - path: ./matrix-locust/matrix_locust/
+          # action: sync
+          # target: /app/matrix_locust/
+          action: rebuild
+    environment:
+      # Locust configuration
+      LOCUST_HOST: ${LOCUST_HOST:-http://synapse:8008}
+      LOCUST_USERS: ${LOCUST_USERS:-100}
+      LOCUST_SPAWN_RATE: ${LOCUST_SPAWN_RATE:-5}
+      LOCUST_RUN_TIME: ${LOCUST_RUN_TIME:-10m}
+      LOCUST_HEADLESS: ${LOCUST_HEADLESS:-false}
+      LOCUST_AUTOSTART: ${LOCUST_AUTOSTART:-false}
+      LOCUST_WEB_HOST: 0.0.0.0
+      LOCUST_WEB_PORT: ${LOCUST_PORT:-8089}
+      # OpenTelemetry configuration
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_SERVICE_NAME: matrix-locust
+      OTEL_RESOURCE_ATTRIBUTES: service.name=matrix-locust,service.namespace=matrix-local
+    volumes:
+      # Mount test configuration and results
+      - ${PWD}/config/synapse-simple-test.json:/test/synapse-simple-test.json:ro
+      - ${PWD}/data/locust-results:/app/data/results
+      - ${PWD}/matrix-locust/matrix_locust/:/app/matrix_locust/:cached
+    ports:
+      - "${LOCUST_PORT:-8089}:8089"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8089/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    # Use sleep to keep container running for interactive testing
+    command: sleep infinity
+    # Original automated command (uncomment to run tests without UI):
+    # command: >
+    #   python run.py
+    #   /test/synapse-simple-test.json
+    #   --host http://synapse:8008
+    logging:
+      driver: ${LOGS_DRIVER:-json-file}
+      options:
+        max-size: ${LOGS_MAX_SIZE:-5m}
+        max-file: ${LOGS_MAX_FILE:-2}
+
+  # ==========================================
+  # OpenTelemetry Stack - Observability
+  # ==========================================
+
+  # Jaeger for distributed tracing
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: jaeger-tracing
+    restart: unless-stopped
+    networks:
+      - matrix-network
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+      COLLECTOR_GRPC_HOST_PORT: 0.0.0.0:4317
+      COLLECTOR_GRPC_MAX_MESSAGE_SIZE: 16777216
+    ports:
+      - "6831:6831/udp"  # Jaeger agent
+      - "16686:16686"     # Jaeger UI
+      - "14250:14250"     # Jaeger collector
+      - "14268:14268"     # Jaeger collector HTTP
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:14269"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: ${LOGS_DRIVER:-json-file}
+      options:
+        max-size: ${LOGS_MAX_SIZE:-5m}
+        max-file: ${LOGS_MAX_FILE:-2}
+
+  # Prometheus for metrics
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus-metrics
+    restart: unless-stopped
+    networks:
+      - matrix-network
+    environment:
+      PROMETHEUS_ARGS: --config.file=/etc/prometheus/prometheus.yml
+    volumes:
+      - ${PWD}/config/prometheus-config.yaml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9091:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+    logging:
+      driver: ${LOGS_DRIVER:-json-file}
+      options:
+        max-size: ${LOGS_MAX_SIZE:-5m}
+        max-file: ${LOGS_MAX_FILE:-2}
+
+  # OpenTelemetry Collector
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: otel-collector
+    restart: unless-stopped
+    networks:
+      - matrix-network
+    depends_on:
+      jaeger:
+        condition: service_started
+      prometheus:
+        condition: service_started
+    environment:
+      OTEL_COLLECTOR_HOST: ${OTEL_COLLECTOR_HOST:-otel-collector}
+      OTEL_COLLECTOR_PORT_GRPC: ${OTEL_COLLECTOR_PORT_GRPC:-4317}
+      OTEL_COLLECTOR_PORT_HTTP: ${OTEL_COLLECTOR_PORT_HTTP:-4318}
+      OTEL_RESOURCE_ATTRIBUTES: ${OTEL_RESOURCE_ATTRIBUTES:-service.namespace=matrix-local}
+    volumes:
+      - ${PWD}/config/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "${OTEL_COLLECTOR_PORT_GRPC:-4317}:4317"     # OTLP gRPC receiver
+      - "${OTEL_COLLECTOR_PORT_HTTP:-4318}:4318"     # OTLP HTTP receiver
+      - "8888:8888"                                    # Metrics endpoint
+      - "8889:8889"                                    # Health check
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8889"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: ${LOGS_DRIVER:-json-file}
+      options:
+        max-size: ${LOGS_MAX_SIZE:-5m}
+        max-file: ${LOGS_MAX_FILE:-2}
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana-dashboards
+    restart: unless-stopped
+    networks:
+      - matrix-network
+    depends_on:
+      prometheus:
+        condition: service_started
+      jaeger:
+        condition: service_started
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_INSTALL_PLUGINS: "grafana-opensearch-datasource"
+    volumes:
+      - ${PWD}/config/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
+      - ${PWD}/config/grafana-dashboards.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml:ro
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: ${LOGS_DRIVER:-json-file}
+      options:
+        max-size: ${LOGS_MAX_SIZE:-5m}
+        max-file: ${LOGS_MAX_FILE:-2}

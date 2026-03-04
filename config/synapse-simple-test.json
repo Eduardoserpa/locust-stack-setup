@@ -1,0 +1,10 @@
+{
+    "scripts": [
+        {
+            "parameter_import": "test-suites/parameters/large-server-register.json",
+            "pre_script_command_args": ["100 synapse full-setup copy-users", "register"],
+            "runtime": "1m",
+            "output_dir": "data/results"
+        }
+    ]
+}

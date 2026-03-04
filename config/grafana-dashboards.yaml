@@ -1,0 +1,14 @@
+# Grafana Dashboards Configuration
+# Configures Grafana to load dashboards
+
+apiVersion: 1
+
+providers:
+  - name: 'Default'
+    orgId: 1
+    folder: ''
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards

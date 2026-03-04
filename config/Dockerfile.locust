@@ -1,0 +1,26 @@
+# Build and run Locust for Matrix load testing
+FROM python:3.12-alpine
+
+# Install dependencies
+RUN apk add --no-cache git gcc libffi-dev musl-dev openssl-dev
+
+# Set working directory
+WORKDIR /app
+
+# Copy local matrix-locust bundle instead of cloning from GitHub
+COPY matrix-locust/ /app/
+
+# Install dependencies without venv
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir poetry && \
+    poetry config virtualenvs.create false && \
+    poetry install --no-interaction --no-ansi
+
+# Create data directory for results
+RUN mkdir -p /app/data/results
+
+# Expose web UI port
+EXPOSE 8089
+
+# Run Locust with simple test
+CMD ["python", "run.py", "/test/synapse-simple-test.json", "--host", "http://synapse:8008"]

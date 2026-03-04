@@ -1,0 +1,81 @@
+# OpenTelemetry Collector Configuration
+# This configuration receives traces, metrics, and logs from Synapse and Locust
+# and exports them to Jaeger for visualization
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  # OTLP receiver for applications sending telemetry via gRPC
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+  # Prometheus receiver for scraping Synapse metrics
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: 'synapse'
+          scrape_interval: 15s
+          static_configs:
+            - targets: ['synapse:9090']
+
+processors:
+  # Add resource attributes to all telemetry
+  resource:
+    attributes:
+      - key: service.namespace
+        value: matrix-locust-test
+        action: upsert
+      - key: environment
+        value: local
+        action: upsert
+
+  # Batch processor to optimize throughput
+  batch:
+    send_batch_size: 512
+    timeout: 5s
+
+  # Memory limiter to prevent OOM
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+    spike_limit_mib: 128
+
+exporters:
+  # Jaeger exporter via OTLP (Jaeger listens on 14250 for OTLP gRPC)
+  otlp:
+    endpoint: jaeger:4317
+
+  # Prometheus exporter for metrics
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+
+  # Debug exporter for debugging
+  debug:
+    verbosity: detailed
+
+service:
+  extensions: [health_check]
+  pipelines:
+    # Traces pipeline: OTLP -> Jaeger via OTLP
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [otlp, debug]
+
+    # Metrics pipeline: Prometheus scrape + OTLP -> Prometheus
+    metrics:
+      receivers: [prometheus, otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [prometheus, debug]
+
+    # Logs pipeline: OTLP -> Debug
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [debug]

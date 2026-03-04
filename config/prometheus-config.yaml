@@ -1,0 +1,55 @@
+# Prometheus Configuration
+# Scrapes metrics from Synapse and the OTEL Collector
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'matrix-local'
+    environment: 'test'
+
+alerting:
+  alertmanagers: []
+
+rule_files: []
+
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Synapse metrics
+  - job_name: 'synapse'
+    static_configs:
+      - targets: ['synapse:9090']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'synapse'
+
+  # OpenTelemetry Collector metrics
+  - job_name: 'otel-collector'
+    static_configs:
+      - targets: ['otel-collector:8888']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'otel-collector'
+
+  # Jaeger metrics (if available)
+  - job_name: 'jaeger'
+    static_configs:
+      - targets: ['jaeger:14269']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'jaeger'
+
+remote_write:
+  # Optional: send metrics to remote storage
+  # - url: "http://remote-prometheus:9009/api/v1/write"
+  #   write_relabel_configs:
+  #     - source_labels: [__name__]
+  #       regex: 'go_|process_'
+  #       action: drop
