@@ -1,3 +1,6 @@
+#!/bin/bash
+set -euo pipefail
+
 # # Clonando ou atualizando os repositórios necessários
 # echo "➕Cloning or updating Matrix Synapse repo"
 # clone_result=$(git clone git@github.com:element-hq/synapse.git)
@@ -5,15 +8,11 @@
 # directory_name=$(echo "$clone_result" | cut -d"'" -f2 | cut -d"'" -f2)
 # echo directory_name
 
-
+git config advice.addIgnoredFile false
 echo "➕Cloning or updating Matrix Locust repo"
 git clone git@github.com:circles-project/matrix-locust.git
-cp -r matrix-locust-mod/. matrix-locust/
 # echo "➕Cloning or updating Matrix Synapse repo"
 # git clone git@github.com:element-hq/synapse.git
-./setup-matrix-stack.sh init
-chmod -R 755 data/
-git config advice.addIgnoredFile false
 
 # echo "➕Cloning or updating OpenTelemetry Demo repo"
 # git clone https://github.com/open-telemetry/opentelemetry-demo.git

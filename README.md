@@ -1,8 +1,10 @@
 # locust-stack-setup
 ## Initial setup
-`sudo bash repo-init.sh`
+`bash init-repo.sh`
+`bash init-services.sh`
 
 ## Starting or restarting services after initial setup
-`bash complete-reset.sh`
-`./setup-matrix-stack.sh start`
-`./setup-matrix-stack.sh restart`
+First, clear every docker container and volumes that currently exist.
+`bash reset-containers.sh`
+Then, clear the databases, generate users and rooms, erase the `data` folder and run all the uncommented tests.
+`bash reset-databases.sh`

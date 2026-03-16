@@ -78,8 +78,8 @@ services:
       otel-collector:
         condition: service_started
     environment:
-      SYNAPSE_CONFIG_DIR: ${SYNAPSE_CONFIG_DIR:-/data}
-      SYNAPSE_CONFIG_PATH: ${SYNAPSE_CONFIG_PATH:-/data/homeserver.yaml}
+      SYNAPSE_CONFIG_DIR: ${SYNAPSE_CONFIG_DIR:-/conf}
+      SYNAPSE_CONFIG_PATH: ${SYNAPSE_CONFIG_PATH:-/conf/homeserver.yaml}
       SYNAPSE_SERVER_NAME: ${SYNAPSE_SERVER_NAME:-matrix.local}
       SYNAPSE_REPORT_STATS: ${SYNAPSE_REPORT_STATS:-no}
       MACAROON_SECRET_KEY: ${MACAROON_SECRET_KEY:-change-me-in-production}
@@ -89,6 +89,7 @@ services:
       OTEL_RESOURCE_ATTRIBUTES: service.name=synapse,service.namespace=matrix-local
     volumes:
       - ${PWD}/data/synapse:/data
+      - ${PWD}/config/synapse:/conf
     ports:
       - "${SYNAPSE_PORT:-8008}:8008"
       - "${SYNAPSE_METRICS_PORT:-9090}:9090"
@@ -112,7 +113,7 @@ services:
   locust:
     build:
       context: .
-      dockerfile: ./config/Dockerfile.locust
+      dockerfile: ./config/locust/Dockerfile.locust
     image: matrix-locust-test:latest
     pull_policy: never  # Never pull - always use local build from matrix-locust folder
     container_name: matrix-locust
@@ -146,9 +147,11 @@ services:
       OTEL_RESOURCE_ATTRIBUTES: service.name=matrix-locust,service.namespace=matrix-local
     volumes:
       # Mount test configuration and results
-      - ${PWD}/config/synapse-simple-test.json:/test/synapse-simple-test.json:ro
+      - ${PWD}/config/locust/synapse-simple-test.json:/test/synapse-simple-test.json:ro
       - ${PWD}/data/locust-results:/app/data/results
       - ${PWD}/matrix-locust/matrix_locust/:/app/matrix_locust/:cached
+      - ${PWD}/matrix-locust/users.csv:/app/users.csv
+      - ${PWD}/matrix-locust/rooms.json:/app/rooms.json
     ports:
       - "${LOCUST_PORT:-8089}:8089"
     healthcheck:
@@ -211,7 +214,7 @@ services:
     environment:
       PROMETHEUS_ARGS: --config.file=/etc/prometheus/prometheus.yml
     volumes:
-      - ${PWD}/config/prometheus-config.yaml:/etc/prometheus/prometheus.yml:ro
+      - ${PWD}/config/observability/prometheus-config.yaml:/etc/prometheus/prometheus.yml:ro
     ports:
       - "9091:9090"
     command:
@@ -242,7 +245,7 @@ services:
       OTEL_COLLECTOR_PORT_HTTP: ${OTEL_COLLECTOR_PORT_HTTP:-4318}
       OTEL_RESOURCE_ATTRIBUTES: ${OTEL_RESOURCE_ATTRIBUTES:-service.namespace=matrix-local}
     volumes:
-      - ${PWD}/config/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+      - ${PWD}/config/observability/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
     ports:
       - "${OTEL_COLLECTOR_PORT_GRPC:-4317}:4317"     # OTLP gRPC receiver
       - "${OTEL_COLLECTOR_PORT_HTTP:-4318}:4318"     # OTLP HTTP receiver
@@ -277,8 +280,8 @@ services:
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_INSTALL_PLUGINS: "grafana-opensearch-datasource"
     volumes:
-      - ${PWD}/config/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
-      - ${PWD}/config/grafana-dashboards.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml:ro
+      - ${PWD}/config/observability/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
+      - ${PWD}/config/observability/grafana-dashboards.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml:ro
     ports:
       - "3000:3000"
     healthcheck:

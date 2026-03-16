@@ -105,7 +105,7 @@ check_requirements() {
         log_info "Found .env configuration file"
     fi
     
-    if [ ! -f "${CONFIG_DIR}/otel-collector-config.yaml" ]; then
+    if [ ! -f "${CONFIG_DIR}/observability/otel-collector-config.yaml" ]; then
         log_error "OpenTelemetry collector config not found"
         missing=1
     else
@@ -137,30 +137,17 @@ create_directories() {
 initialize_synapse_config() {
     log_section "Initializing Synapse Configuration"
     
-    # Check if synapse config exists
-    if [ -f "${DATA_DIR}/synapse/homeserver.yaml" ]; then
-        log_warn "Synapse configuration already exists, skipping initialization"
-        return 0
+    # Synapse config is now mounted from config/synapse:/conf in docker-compose.yml
+    # The SYNAPSE_CONFIG_PATH is set to /conf/homeserver.yaml
+    # Therefore, no need to copy config to /data - it's purely for runtime files
+    
+    if [ ! -f "${CONFIG_DIR}/synapse/homeserver.yaml" ]; then
+        log_error "Synapse configuration not found at ${CONFIG_DIR}/synapse/homeserver.yaml"
+        log_error "Please ensure config/synapse/homeserver.yaml exists"
+        return 1
     fi
     
-    log_info "Generating Synapse configuration..."
-    
-    # Create a temporary docker container to generate the config
-    docker run --rm \
-        -v "${DATA_DIR}/synapse:/data" \
-        -e SYNAPSE_SERVER_NAME="${SYNAPSE_SERVER_NAME:-matrix.local}" \
-        -e SYNAPSE_REPORT_STATS="${SYNAPSE_REPORT_STATS:-no}" \
-        "${SYNAPSE_IMAGE:-matrixdotorg/synapse:latest}" \
-        generate \
-        --config-path=/data/homeserver.yaml
-    
-    # Apply template configuration on top
-    if [ -f "${CONFIG_DIR}/synapse-homeserver-template.yaml" ]; then
-        log_info "Applying custom Synapse configuration..."
-        # The generate command creates the config, additional customization can be done here
-    fi
-    
-    log_success "Synapse configuration initialized"
+    log_success "Synapse configuration ready (mounted from config/synapse to /conf in container)"
 }
 
 build_images() {
@@ -186,7 +173,7 @@ init_stack() {
     create_directories
     build_images
     initialize_synapse_config
-    
+    -,
     log_success "Stack initialization complete"
     log_info "Next steps:"
     echo -e "  1. Review and customize config files in ${CONFIG_DIR}/"
@@ -474,8 +461,8 @@ ${BLUE}Examples:${NC}
 
 ${BLUE}Configuration:${NC}
   - Edit ${CONFIG_DIR}/.env to customize settings
-  - Edit ${CONFIG_DIR}/otel-collector-config.yaml for OpenTelemetry settings
-  - Edit ${CONFIG_DIR}/synapse-homeserver-template.yaml for Synapse settings
+  - Edit ${CONFIG_DIR}/observability/otel-collector-config.yaml for OpenTelemetry settings
+  - Edit ${CONFIG_DIR}/synapse/homeserver.yaml for Synapse settings
 
 ${BLUE}Documentation:${NC}
   See docs/MATRIX_STACK_SETUP.md for detailed information
