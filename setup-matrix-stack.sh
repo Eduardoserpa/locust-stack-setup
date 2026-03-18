@@ -173,7 +173,6 @@ init_stack() {
     create_directories
     build_images
     initialize_synapse_config
-    -,
     log_success "Stack initialization complete"
     log_info "Next steps:"
     echo -e "  1. Review and customize config files in ${CONFIG_DIR}/"
@@ -196,7 +195,7 @@ start_stack() {
     
     log_info "Starting containers..."
     
-    if docker compose -f "${COMPOSE_FILE}" --env-file "${ENV_FILE}" up --watch; then
+    if docker compose -p matrix-stack -f "${COMPOSE_FILE}" --env-file "${ENV_FILE}" up --watch; then
         log_success "Stack started successfully"
         
         log_info "Waiting for services to become healthy..."
@@ -245,7 +244,7 @@ start_stack() {
 stop_stack() {
     log_section "Stopping Matrix Stack"
     
-    if docker compose -f "${COMPOSE_FILE}" down; then
+    if docker compose -p matrix-stack -f "${COMPOSE_FILE}" down; then
         log_success "Stack stopped"
     else
         log_error "Failed to stop stack"
@@ -264,7 +263,7 @@ restart_stack() {
 show_status() {
     log_section "Stack Status"
     
-    docker compose -f "${COMPOSE_FILE}" ps || log_error "Failed to get status"
+    docker compose -p matrix-stack -f "${COMPOSE_FILE}" ps || log_error "Failed to get status"
 }
 
 run_quick_tests() {
@@ -283,7 +282,7 @@ run_quick_tests() {
     # Step 1: Reset Database
     log_info "Step 1/3: Resetting Synapse database..."
     local reset_output
-    reset_output=$(docker compose exec -T postgres psql -U synapse -d synapse << 'PSQL_EOF' 2>&1
+    reset_output=$(docker compose -p matrix-stack exec -T postgres psql -U synapse -d synapse << 'PSQL_EOF' 2>&1
 TRUNCATE TABLE profiles CASCADE;
 TRUNCATE TABLE users CASCADE;
 TRUNCATE TABLE user_threepids CASCADE;
@@ -304,7 +303,7 @@ PSQL_EOF
     
     # Step 2: Generate Test Users
     log_info "Step 2/3: Generating ${test_users} test users..."
-    if docker compose exec -T locust poetry run python generate_users.py ${test_users} > /dev/null 2>&1; then
+    if docker compose -p matrix-stack exec -T locust poetry run python generate_users.py ${test_users} > /dev/null 2>&1; then
         log_success "✓ Generated ${test_users} test users (user.000000 - user.000009)"
     else
         log_error "Failed to generate test users"
@@ -316,7 +315,7 @@ PSQL_EOF
     
     local test_output_file="/tmp/locust_test_output_${RANDOM}.txt"
     rm -f "${test_output_file}"
-    docker compose exec -T locust poetry run python -m locust \
+    docker compose -p matrix-stack exec -T locust poetry run python -m locust \
         -f matrix_locust/client_server/register.py \
         --host=http://synapse:8008 \
         --headless --users=${test_users} --spawn-rate=${spawn_rate} --run-time=${run_time} > "${test_output_file}" 2>&1 &
@@ -383,10 +382,10 @@ show_logs() {
     
     if [ -z "${service}" ]; then
         log_section "Stack Logs (All Services)"
-        docker compose -f "${COMPOSE_FILE}" logs -f --tail=100
+        docker compose -p matrix-stack -f "${COMPOSE_FILE}" logs -f --tail=100
     else
         log_section "Logs for ${service}"
-        docker compose -f "${COMPOSE_FILE}" logs -f --tail=100 "${service}"
+        docker compose -p matrix-stack -f "${COMPOSE_FILE}" logs -f --tail=100 "${service}"
     fi
 }
 
@@ -397,7 +396,7 @@ clean_stack() {
     read -p "Continue? (yes/no): " -r response
     
     if [[ "$response" =~ ^[Yy]es?$ ]]; then
-        if docker compose -f "${COMPOSE_FILE}" down; then
+        if docker compose -p matrix-stack -f "${COMPOSE_FILE}" down; then
             log_success "Containers removed"
         else
             log_error "Failed to clean stack"
@@ -415,7 +414,7 @@ destroy_stack() {
     read -p "Type 'destroy' to confirm: " -r response
     
     if [ "${response}" = "destroy" ]; then
-        if docker compose -f "${COMPOSE_FILE}" down -v; then
+         if docker compose -p matrix-stack -f "${COMPOSE_FILE}" down -v; then
             log_success "Stack destroyed"
             
             # Remove data directories

@@ -15,6 +15,8 @@ docker network prune -f
 echo "Remove all unused containers, networks, images, and volumes"
 docker system prune -a --volumes -f
 
+sudo systemctl restart docker
+
 # # Cleaning files and databases
 sudo rm -r ./data/
 mkdir data
