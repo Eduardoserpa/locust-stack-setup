@@ -25,6 +25,6 @@ git clone git@github.com:circles-project/matrix-locust.git
 
 # # Iniciando os componentes em containers separados
 # echo "Starting Matrix Synapse from docker compose"
-# docker compose -f matrix-docker-ansible-deploy/docker-compose.yml up --force-recreate --remove-orphans --detach
+# docker compose -p matrix-stack -f matrix-docker-ansible-deploy/docker-compose.yml up --force-recreate --remove-orphans --detach
 # echo "Starting OpenTelemetry Demo from docker compose" 
-# docker compose -f opentelemetry-demo/docker-compose.yml up --force-recreate --remove-orphans --detach
+# docker compose -p matrix-stack -f opentelemetry-demo/docker-compose.yml up --force-recreate --remove-orphans --detach

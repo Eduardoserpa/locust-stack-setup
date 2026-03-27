@@ -125,12 +125,12 @@ services:
         condition: service_healthy
       otel-collector:
         condition: service_started
-    develop:
-      watch:
-        - path: ./matrix-locust/matrix_locust/
-          # action: sync
-          # target: /app/matrix_locust/
-          action: rebuild
+    # develop:
+    #   watch:
+    #     - path: ./matrix-locust/matrix_locust/
+    #       # action: sync
+    #       # target: /app/matrix_locust/
+    #       action: rebuild
     environment:
       # Locust configuration
       LOCUST_HOST: ${LOCUST_HOST:-http://synapse:8008}

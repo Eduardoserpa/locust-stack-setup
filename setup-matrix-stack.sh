@@ -195,7 +195,8 @@ start_stack() {
     
     log_info "Starting containers..."
     
-    if docker compose -p matrix-stack -f "${COMPOSE_FILE}" --env-file "${ENV_FILE}" up --watch; then
+    # if docker compose -p matrix-stack -f "${COMPOSE_FILE}" --env-file "${ENV_FILE}" up --watch; then
+    if docker compose -p matrix-stack -f "${COMPOSE_FILE}" --env-file "${ENV_FILE}" up; then
         log_success "Stack started successfully"
         
         log_info "Waiting for services to become healthy..."
