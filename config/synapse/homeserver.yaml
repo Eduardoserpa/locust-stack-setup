@@ -27,21 +27,42 @@ database:
     cp_min: 10
     cp_max: 10
 
-# Redis configuration for caching (optional but recommended)
+# Redis configuration for caching and replication
 redis:
   enabled: true
   host: redis
   port: 6379
 
+# ==========================================
+# Worker Configuration
+# ==========================================
+# The following settings enable Synapse to run with multiple worker processes.
+# These workers communicate via HTTP replication and Redis pub/sub.
+
+# Main process instance name (used in instance_map)
+instance_map:
+  master:
+    host: synapse
+    port: 9093
+
 # Listeners for client and federation
 listeners:
-  # Client API listener
+  # Client API listener (main process only, behind nginx)
   - port: 8008
+    type: http
+    x_forwarded: true
+    bind_addresses: ['0.0.0.0']
+    resources:
+      - names: [client, federation]
+        compress: false
+
+  # Replication listener (main process communication with workers)
+  - port: 9093
     type: http
     x_forwarded: false
     bind_addresses: ['0.0.0.0']
     resources:
-      - names: [client, federation]
+      - names: [replication]
         compress: false
 
   # Metrics listener

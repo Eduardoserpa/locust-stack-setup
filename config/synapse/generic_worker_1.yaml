@@ -1,0 +1,43 @@
+# Synapse Generic Worker Configuration - Worker 1
+# This worker inherits base configuration from homeserver.yaml
+
+# Include the base homeserver configuration
+include:
+  - homeserver.yaml
+
+# Worker-specific settings
+worker_app: synapse.app.generic_worker
+worker_name: worker_1
+
+# HTTP listener for this worker (unique port)
+listeners:
+  - port: 8081
+    type: http
+    bind_addresses: ['0.0.0.0']
+    resources:
+      - names: [client, federation]
+        compress: false
+
+# Replication client for communicating with main process
+replication:
+  worker_replication_host: synapse
+  worker_replication_port: 9093
+  worker_replication_http_scheme: http
+
+# Logging configuration
+logging:
+  version: 1
+  formatters:
+    normal:
+      format: '%(asctime)s [%(process)d] %(levelname)-5s %(name)s %(message)s'
+  handlers:
+    console:
+      class: logging.StreamHandler
+      formatter: normal
+      stream: ext://sys.stdout
+  loggers:
+    synapse.storage.SQL:
+      level: INFO
+  root:
+    handlers: [console]
+    level: INFO

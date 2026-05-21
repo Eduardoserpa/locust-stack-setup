@@ -2,6 +2,9 @@
 # echo "Bringing down Docker Compose services from the current folder"
 # docker compose -p matrix-stack down --rmi all --volumes --remove-orphans
 
+# echo "Completely removing all Docker containers"
+# docker rm -f $(docker ps -aq)
+
 echo "Stopping containers"
 docker compose -p matrix-stack stop $(docker compose -p matrix-stack ps -aq)
 echo "Removing containers"

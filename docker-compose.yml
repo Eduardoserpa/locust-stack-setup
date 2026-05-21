@@ -61,9 +61,38 @@ services:
       options:
         max-size: ${LOGS_MAX_SIZE:-5m}
         max-file: ${LOGS_MAX_FILE:-2}
-
+  # Nginx reverse proxy (optional, can be used for TLS termination or routing)
+  nginx:
+    image: nginx:alpine # Use the lightweight alpine image
+    container_name: synapse-nginx
+    ports:
+      - "80:80" # Map port 80 on the host to port 80 in the container
+    networks:
+      - matrix-network
+    volumes:
+      # Mount local nginx.conf to the container's config path
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      # Mount local html directory to the container's web root
+      - ./html:/usr/share/nginx/html:ro
+    restart: unless-stopped
+    depends_on:
+      synapse:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "ps aux | grep -q '[n]ginx' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: ${LOGS_DRIVER:-json-file}
+      options:
+        max-size: ${LOGS_MAX_SIZE:-5m}
+        max-file: ${LOGS_MAX_FILE:-2}
   # Synapse homeserver
   synapse:
+    build:
+      context: .
+      dockerfile: ./config/synapse/Dockerfile.synapse
     image: ${SYNAPSE_IMAGE:-matrixdotorg/synapse:latest}
     container_name: synapse-homeserver
     user: "${SYNAPSE_UID:-1000}:${SYNAPSE_GID:-1000}"
@@ -93,12 +122,107 @@ services:
     ports:
       - "${SYNAPSE_PORT:-8008}:8008"
       - "${SYNAPSE_METRICS_PORT:-9090}:9090"
+      - "9093:9093"
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8008/_matrix/client/versions || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
       start_period: 30s
+    logging:
+      driver: ${LOGS_DRIVER:-json-file}
+      options:
+        max-size: ${LOGS_MAX_SIZE:-5m}
+        max-file: ${LOGS_MAX_FILE:-2}
+
+  # Synapse Generic Worker 1
+  synapse-worker-1:
+    build:
+      context: .
+      dockerfile: ./config/synapse/Dockerfile.synapse
+    image: ${SYNAPSE_IMAGE:-matrixdotorg/synapse:latest}
+    container_name: synapse-worker-1
+    user: "${SYNAPSE_UID:-1000}:${SYNAPSE_GID:-1000}"
+    restart: unless-stopped
+    networks:
+      - matrix-network
+    depends_on:
+      synapse:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    environment:
+      SYNAPSE_CONFIG_DIR: ${SYNAPSE_CONFIG_DIR:-/conf}
+      SYNAPSE_CONFIG_PATH: ${SYNAPSE_CONFIG_PATH:-/conf/generic_worker_1.yaml}
+      SYNAPSE_SERVER_NAME: ${SYNAPSE_SERVER_NAME:-matrix.local}
+      SYNAPSE_REPORT_STATS: ${SYNAPSE_REPORT_STATS:-no}
+      MACAROON_SECRET_KEY: ${MACAROON_SECRET_KEY:-change-me-in-production}
+      # OpenTelemetry configuration
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_SERVICE_NAME: synapse-worker-1
+      OTEL_RESOURCE_ATTRIBUTES: service.name=synapse-worker-1,service.namespace=matrix-local
+    volumes:
+      - ${PWD}/data/synapse:/data
+      - ${PWD}/config/synapse:/conf
+    ports:
+      - "8081:8081"
+    healthcheck:
+      test: ["CMD-SHELL", "ps aux | grep -q '[p]ython.*generic_worker' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
+    logging:
+      driver: ${LOGS_DRIVER:-json-file}
+      options:
+        max-size: ${LOGS_MAX_SIZE:-5m}
+        max-file: ${LOGS_MAX_FILE:-2}
+
+  # Synapse Generic Worker 2
+  synapse-worker-2:
+    build:
+      context: .
+      dockerfile: ./config/synapse/Dockerfile.synapse
+    image: ${SYNAPSE_IMAGE:-matrixdotorg/synapse:latest}
+    container_name: synapse-worker-2
+    user: "${SYNAPSE_UID:-1000}:${SYNAPSE_GID:-1000}"
+    restart: unless-stopped
+    networks:
+      - matrix-network
+    depends_on:
+      synapse:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    environment:
+      SYNAPSE_CONFIG_DIR: ${SYNAPSE_CONFIG_DIR:-/conf}
+      SYNAPSE_CONFIG_PATH: ${SYNAPSE_CONFIG_PATH:-/conf/generic_worker_2.yaml}
+      SYNAPSE_SERVER_NAME: ${SYNAPSE_SERVER_NAME:-matrix.local}
+      SYNAPSE_REPORT_STATS: ${SYNAPSE_REPORT_STATS:-no}
+      MACAROON_SECRET_KEY: ${MACAROON_SECRET_KEY:-change-me-in-production}
+      # OpenTelemetry configuration
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_SERVICE_NAME: synapse-worker-2
+      OTEL_RESOURCE_ATTRIBUTES: service.name=synapse-worker-2,service.namespace=matrix-local
+    volumes:
+      - ${PWD}/data/synapse:/data
+      - ${PWD}/config/synapse:/conf
+    ports:
+      - "8082:8082"
+    healthcheck:
+      test: ["CMD-SHELL", "ps aux | grep -q '[p]ython.*generic_worker' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
     logging:
       driver: ${LOGS_DRIVER:-json-file}
       options:
@@ -123,6 +247,12 @@ services:
     depends_on:
       synapse:
         condition: service_healthy
+      synapse-worker-1:
+        condition: service_healthy
+      synapse-worker-2:
+        condition: service_healthy
+      nginx:
+        condition: service_healthy
       otel-collector:
         condition: service_started
     # develop:
@@ -132,8 +262,8 @@ services:
     #       # target: /app/matrix_locust/
     #       action: rebuild
     environment:
-      # Locust configuration
-      LOCUST_HOST: ${LOCUST_HOST:-http://synapse:8008}
+      # Locust configuration - point to nginx reverse proxy
+      LOCUST_HOST: ${LOCUST_HOST:-http://nginx:80}
       LOCUST_USERS: ${LOCUST_USERS:-100}
       LOCUST_SPAWN_RATE: ${LOCUST_SPAWN_RATE:-5}
       LOCUST_RUN_TIME: ${LOCUST_RUN_TIME:-10m}

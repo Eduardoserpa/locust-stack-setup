@@ -1,6 +1,6 @@
 # GitHub repos
-./matrix-locust/
-./synapse/
+./matrix-locust/*
+./not-in-use/*
 ./data/*
 
 # Byte-compiled / optimized / DLL files
