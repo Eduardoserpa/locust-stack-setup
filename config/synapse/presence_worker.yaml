@@ -1,0 +1,18 @@
+worker_app: synapse.app.generic_worker
+worker_name: presence_worker
+run_background_updates: false
+
+worker_listeners:
+  - port: 8086
+    type: http
+    x_forwarded: true
+    bind_addresses: ['0.0.0.0']
+    resources:
+      - names: [client]
+        compress: false
+  - port: 9097
+    type: http
+    bind_addresses: ['0.0.0.0']
+    resources:
+      - names: [replication]
+        compress: false

@@ -1,0 +1,18 @@
+worker_app: synapse.app.generic_worker
+worker_name: receipts_worker
+run_background_updates: false
+
+worker_listeners:
+  - port: 8087
+    type: http
+    x_forwarded: true
+    bind_addresses: ['0.0.0.0']
+    resources:
+      - names: [client]
+        compress: false
+  - port: 9098
+    type: http
+    bind_addresses: ['0.0.0.0']
+    resources:
+      - names: [replication]
+        compress: false

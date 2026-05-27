@@ -3,8 +3,16 @@ FROM matrixdotorg/synapse:latest
 
 # Copy our custom configuration files
 COPY ./config/synapse/homeserver.yaml /conf/homeserver.yaml
-COPY ./config/synapse/generic_worker_1.yaml /conf/generic_worker_1.yaml
-COPY ./config/synapse/generic_worker_2.yaml /conf/generic_worker_2.yaml
+
+# Copy specialized worker configurations
+COPY ./config/synapse/event_persister.yaml /conf/event_persister.yaml
+COPY ./config/synapse/typing_worker.yaml /conf/typing_worker.yaml
+COPY ./config/synapse/to_device_worker.yaml /conf/to_device_worker.yaml
+COPY ./config/synapse/presence_worker.yaml /conf/presence_worker.yaml
+COPY ./config/synapse/receipts_worker.yaml /conf/receipts_worker.yaml
+COPY ./config/synapse/push_rules_worker.yaml /conf/push_rules_worker.yaml
+COPY ./config/synapse/device_lists_worker.yaml /conf/device_lists_worker.yaml
+COPY ./config/synapse/account_data_worker.yaml /conf/account_data_worker.yaml
 
 # Set working directory
 WORKDIR /data

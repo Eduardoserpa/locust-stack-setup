@@ -12,26 +12,27 @@ docker compose -p matrix-stack exec -T locust poetry run python generate_users.p
 docker compose -p matrix-stack exec -T locust poetry run python generate_rooms.py
 
 # Load testing
+  # --host=http://synapse:8008 #previous host for direct synapse access, now using nginx as reverse proxy
 echo "Test 1 - User Registration"
 docker compose -p matrix-stack exec locust poetry run python -m locust \
   -f matrix_locust/client_server/register.py \
-  --host=http://synapse:8008 \
+  --host=http://nginx:80 \
   --headless --users=10 --spawn-rate=1 --run-time=10s
 
 echo "Test 2 - Room Creation"
 docker compose -p matrix-stack exec locust poetry run python -m locust \
   -f matrix_locust/client_server/create_room.py \
-  --host=http://synapse:8008 \
+  --host=http://nginx:80 \
   --headless --users=10 --spawn-rate=1 --run-time=15s
 
 echo "Test 3 - Join Rooms"
 docker compose -p matrix-stack exec locust poetry run python -m locust \
   -f matrix_locust/client_server/join.py \
-  --host=http://synapse:8008 \
+  --host=http://nginx:80 \
   --headless --users=10 --spawn-rate=1 --run-time=15s
 
 echo "Test 4 - Chat Activity"
 docker compose -p matrix-stack exec locust poetry run python -m locust \
   -f locust-run-users.py \
-  --host=http://synapse:8008 \
+  --host=http://nginx:80 \
   --headless --users=10 --spawn-rate=1 --run-time=60s

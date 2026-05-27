@@ -79,6 +79,22 @@ services:
     depends_on:
       synapse:
         condition: service_healthy
+      synapse-event-persister:
+        condition: service_healthy
+      synapse-typing-worker:
+        condition: service_healthy
+      synapse-to-device-worker:
+        condition: service_healthy
+      synapse-presence-worker:
+        condition: service_healthy
+      synapse-receipts-worker:
+        condition: service_healthy
+      synapse-push-rules-worker:
+        condition: service_healthy
+      synapse-device-lists-worker:
+        condition: service_healthy
+      synapse-account-data-worker:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "ps aux | grep -q '[n]ginx' || exit 1"]
       interval: 10s
@@ -123,7 +139,8 @@ services:
     ports:
       - "${SYNAPSE_PORT:-8008}:8008"
       - "${SYNAPSE_METRICS_PORT:-9090}:9090"
-      - "9093:9093"
+    expose:
+      - "9093"
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8008/_matrix/client/versions || exit 1"]
       interval: 15s
@@ -136,13 +153,17 @@ services:
         max-size: ${LOGS_MAX_SIZE:-5m}
         max-file: ${LOGS_MAX_FILE:-2}
 
-  # Synapse Generic Worker 1
-  synapse-worker-1:
+  # ==========================================
+  # Specialized Workers
+  # ==========================================
+
+  # Event Persister Worker - Handles 'events' stream
+  synapse-event-persister:
     build:
       context: .
       dockerfile: ./config/synapse/Dockerfile.custom
     image: ${SYNAPSE_IMAGE:-matrixdotorg/synapse:latest}
-    container_name: synapse-worker-1
+    container_name: synapse-event-persister
     user: "${SYNAPSE_UID:-1000}:${SYNAPSE_GID:-1000}"
     restart: unless-stopped
     networks:
@@ -154,26 +175,21 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      otel-collector:
-        condition: service_started
     environment:
       SYNAPSE_WORKER: synapse.app.generic_worker
       SYNAPSE_CONFIG_DIR: ${SYNAPSE_CONFIG_DIR:-/conf}
-      SYNAPSE_CONFIG_PATH: ${SYNAPSE_CONFIG_PATH:-/conf/generic_worker_1.yaml}
       SYNAPSE_SERVER_NAME: ${SYNAPSE_SERVER_NAME:-matrix.local}
-      SYNAPSE_REPORT_STATS: ${SYNAPSE_REPORT_STATS:-no}
       MACAROON_SECRET_KEY: ${MACAROON_SECRET_KEY:-change-me-in-production}
-      # OpenTelemetry configuration
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
-      OTEL_SERVICE_NAME: synapse-worker-1
-      OTEL_RESOURCE_ATTRIBUTES: service.name=synapse-worker-1,service.namespace=matrix-local
+      OTEL_SERVICE_NAME: synapse-event-persister
     volumes:
       - ${PWD}/data/synapse:/data
       - ${PWD}/config/synapse:/conf
-    ports:
-      - "8081:8081"
+    command: ["run", "-m", "synapse.app.generic_worker", "--config-path", "/conf/homeserver.yaml", "--config-path", "/conf/event_persister.yaml"]
+    expose:
+      - "9094"
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8081/_matrix/client/versions || exit 1"]
+      test: ["CMD-SHELL", "python -c \"import socket; s=socket.create_connection(('127.0.0.1', 9094), 5); s.close()\""]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -184,13 +200,13 @@ services:
         max-size: ${LOGS_MAX_SIZE:-5m}
         max-file: ${LOGS_MAX_FILE:-2}
 
-  # Synapse Generic Worker 2
-  synapse-worker-2:
+  # Typing Worker - Handles 'typing' stream
+  synapse-typing-worker:
     build:
       context: .
       dockerfile: ./config/synapse/Dockerfile.custom
     image: ${SYNAPSE_IMAGE:-matrixdotorg/synapse:latest}
-    container_name: synapse-worker-2
+    container_name: synapse-typing-worker
     user: "${SYNAPSE_UID:-1000}:${SYNAPSE_GID:-1000}"
     restart: unless-stopped
     networks:
@@ -202,26 +218,286 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      otel-collector:
-        condition: service_started
     environment:
       SYNAPSE_WORKER: synapse.app.generic_worker
       SYNAPSE_CONFIG_DIR: ${SYNAPSE_CONFIG_DIR:-/conf}
-      SYNAPSE_CONFIG_PATH: ${SYNAPSE_CONFIG_PATH:-/conf/generic_worker_2.yaml}
       SYNAPSE_SERVER_NAME: ${SYNAPSE_SERVER_NAME:-matrix.local}
-      SYNAPSE_REPORT_STATS: ${SYNAPSE_REPORT_STATS:-no}
       MACAROON_SECRET_KEY: ${MACAROON_SECRET_KEY:-change-me-in-production}
-      # OpenTelemetry configuration
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
-      OTEL_SERVICE_NAME: synapse-worker-2
-      OTEL_RESOURCE_ATTRIBUTES: service.name=synapse-worker-2,service.namespace=matrix-local
+      OTEL_SERVICE_NAME: synapse-typing-worker
     volumes:
       - ${PWD}/data/synapse:/data
       - ${PWD}/config/synapse:/conf
-    ports:
-      - "8082:8082"
+    command: ["run", "-m", "synapse.app.generic_worker", "--config-path", "/conf/homeserver.yaml", "--config-path", "/conf/typing_worker.yaml"]
+    expose:
+      - "8084"
+      - "9095"
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8082/_matrix/client/versions || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8084/_matrix/client/versions || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
+    logging:
+      driver: ${LOGS_DRIVER:-json-file}
+      options:
+        max-size: ${LOGS_MAX_SIZE:-5m}
+        max-file: ${LOGS_MAX_FILE:-2}
+
+  # To-Device Worker - Handles 'to_device' stream (E2EE messages)
+  synapse-to-device-worker:
+    build:
+      context: .
+      dockerfile: ./config/synapse/Dockerfile.custom
+    image: ${SYNAPSE_IMAGE:-matrixdotorg/synapse:latest}
+    container_name: synapse-to-device-worker
+    user: "${SYNAPSE_UID:-1000}:${SYNAPSE_GID:-1000}"
+    restart: unless-stopped
+    networks:
+      - matrix-network
+    depends_on:
+      synapse:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SYNAPSE_WORKER: synapse.app.generic_worker
+      SYNAPSE_CONFIG_DIR: ${SYNAPSE_CONFIG_DIR:-/conf}
+      SYNAPSE_SERVER_NAME: ${SYNAPSE_SERVER_NAME:-matrix.local}
+      MACAROON_SECRET_KEY: ${MACAROON_SECRET_KEY:-change-me-in-production}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_SERVICE_NAME: synapse-to-device-worker
+    volumes:
+      - ${PWD}/data/synapse:/data
+      - ${PWD}/config/synapse:/conf
+    command: ["run", "-m", "synapse.app.generic_worker", "--config-path", "/conf/homeserver.yaml", "--config-path", "/conf/to_device_worker.yaml"]
+    expose:
+      - "8085"
+      - "9096"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8085/_matrix/client/versions || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
+    logging:
+      driver: ${LOGS_DRIVER:-json-file}
+      options:
+        max-size: ${LOGS_MAX_SIZE:-5m}
+        max-file: ${LOGS_MAX_FILE:-2}
+
+  # Presence Worker - Handles 'presence' stream
+  synapse-presence-worker:
+    build:
+      context: .
+      dockerfile: ./config/synapse/Dockerfile.custom
+    image: ${SYNAPSE_IMAGE:-matrixdotorg/synapse:latest}
+    container_name: synapse-presence-worker
+    user: "${SYNAPSE_UID:-1000}:${SYNAPSE_GID:-1000}"
+    restart: unless-stopped
+    networks:
+      - matrix-network
+    depends_on:
+      synapse:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SYNAPSE_WORKER: synapse.app.generic_worker
+      SYNAPSE_CONFIG_DIR: ${SYNAPSE_CONFIG_DIR:-/conf}
+      SYNAPSE_SERVER_NAME: ${SYNAPSE_SERVER_NAME:-matrix.local}
+      MACAROON_SECRET_KEY: ${MACAROON_SECRET_KEY:-change-me-in-production}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_SERVICE_NAME: synapse-presence-worker
+    volumes:
+      - ${PWD}/data/synapse:/data
+      - ${PWD}/config/synapse:/conf
+    command: ["run", "-m", "synapse.app.generic_worker", "--config-path", "/conf/homeserver.yaml", "--config-path", "/conf/presence_worker.yaml"]
+    expose:
+      - "8086"
+      - "9097"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8086/_matrix/client/versions || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
+    logging:
+      driver: ${LOGS_DRIVER:-json-file}
+      options:
+        max-size: ${LOGS_MAX_SIZE:-5m}
+        max-file: ${LOGS_MAX_FILE:-2}
+
+  # Receipts Worker - Handles 'receipts' stream
+  synapse-receipts-worker:
+    build:
+      context: .
+      dockerfile: ./config/synapse/Dockerfile.custom
+    image: ${SYNAPSE_IMAGE:-matrixdotorg/synapse:latest}
+    container_name: synapse-receipts-worker
+    user: "${SYNAPSE_UID:-1000}:${SYNAPSE_GID:-1000}"
+    restart: unless-stopped
+    networks:
+      - matrix-network
+    depends_on:
+      synapse:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SYNAPSE_WORKER: synapse.app.generic_worker
+      SYNAPSE_CONFIG_DIR: ${SYNAPSE_CONFIG_DIR:-/conf}
+      SYNAPSE_SERVER_NAME: ${SYNAPSE_SERVER_NAME:-matrix.local}
+      MACAROON_SECRET_KEY: ${MACAROON_SECRET_KEY:-change-me-in-production}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_SERVICE_NAME: synapse-receipts-worker
+    volumes:
+      - ${PWD}/data/synapse:/data
+      - ${PWD}/config/synapse:/conf
+    command: ["run", "-m", "synapse.app.generic_worker", "--config-path", "/conf/homeserver.yaml", "--config-path", "/conf/receipts_worker.yaml"]
+    expose:
+      - "8087"
+      - "9098"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8087/_matrix/client/versions || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
+    logging:
+      driver: ${LOGS_DRIVER:-json-file}
+      options:
+        max-size: ${LOGS_MAX_SIZE:-5m}
+        max-file: ${LOGS_MAX_FILE:-2}
+
+  # Push Rules Worker - Handles 'push_rules' stream
+  synapse-push-rules-worker:
+    build:
+      context: .
+      dockerfile: ./config/synapse/Dockerfile.custom
+    image: ${SYNAPSE_IMAGE:-matrixdotorg/synapse:latest}
+    container_name: synapse-push-rules-worker
+    user: "${SYNAPSE_UID:-1000}:${SYNAPSE_GID:-1000}"
+    restart: unless-stopped
+    networks:
+      - matrix-network
+    depends_on:
+      synapse:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SYNAPSE_WORKER: synapse.app.generic_worker
+      SYNAPSE_CONFIG_DIR: ${SYNAPSE_CONFIG_DIR:-/conf}
+      SYNAPSE_SERVER_NAME: ${SYNAPSE_SERVER_NAME:-matrix.local}
+      MACAROON_SECRET_KEY: ${MACAROON_SECRET_KEY:-change-me-in-production}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_SERVICE_NAME: synapse-push-rules-worker
+    volumes:
+      - ${PWD}/data/synapse:/data
+      - ${PWD}/config/synapse:/conf
+    command: ["run", "-m", "synapse.app.generic_worker", "--config-path", "/conf/homeserver.yaml", "--config-path", "/conf/push_rules_worker.yaml"]
+    expose:
+      - "8088"
+      - "9099"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8088/_matrix/client/versions || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
+    logging:
+      driver: ${LOGS_DRIVER:-json-file}
+      options:
+        max-size: ${LOGS_MAX_SIZE:-5m}
+        max-file: ${LOGS_MAX_FILE:-2}
+
+  # Device Lists Worker - Handles 'device_lists' stream
+  synapse-device-lists-worker:
+    build:
+      context: .
+      dockerfile: ./config/synapse/Dockerfile.custom
+    image: ${SYNAPSE_IMAGE:-matrixdotorg/synapse:latest}
+    container_name: synapse-device-lists-worker
+    user: "${SYNAPSE_UID:-1000}:${SYNAPSE_GID:-1000}"
+    restart: unless-stopped
+    networks:
+      - matrix-network
+    depends_on:
+      synapse:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SYNAPSE_WORKER: synapse.app.generic_worker
+      SYNAPSE_CONFIG_DIR: ${SYNAPSE_CONFIG_DIR:-/conf}
+      SYNAPSE_SERVER_NAME: ${SYNAPSE_SERVER_NAME:-matrix.local}
+      MACAROON_SECRET_KEY: ${MACAROON_SECRET_KEY:-change-me-in-production}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_SERVICE_NAME: synapse-device-lists-worker
+    volumes:
+      - ${PWD}/data/synapse:/data
+      - ${PWD}/config/synapse:/conf
+    command: ["run", "-m", "synapse.app.generic_worker", "--config-path", "/conf/homeserver.yaml", "--config-path", "/conf/device_lists_worker.yaml"]
+    expose:
+      - "8089"
+      - "9100"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8089/_matrix/client/versions || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
+    logging:
+      driver: ${LOGS_DRIVER:-json-file}
+      options:
+        max-size: ${LOGS_MAX_SIZE:-5m}
+        max-file: ${LOGS_MAX_FILE:-2}
+
+  # Account Data Worker - Handles 'account_data' stream
+  synapse-account-data-worker:
+    build:
+      context: .
+      dockerfile: ./config/synapse/Dockerfile.custom
+    image: ${SYNAPSE_IMAGE:-matrixdotorg/synapse:latest}
+    container_name: synapse-account-data-worker
+    user: "${SYNAPSE_UID:-1000}:${SYNAPSE_GID:-1000}"
+    restart: unless-stopped
+    networks:
+      - matrix-network
+    depends_on:
+      synapse:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SYNAPSE_WORKER: synapse.app.generic_worker
+      SYNAPSE_CONFIG_DIR: ${SYNAPSE_CONFIG_DIR:-/conf}
+      SYNAPSE_SERVER_NAME: ${SYNAPSE_SERVER_NAME:-matrix.local}
+      MACAROON_SECRET_KEY: ${MACAROON_SECRET_KEY:-change-me-in-production}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_SERVICE_NAME: synapse-account-data-worker
+    volumes:
+      - ${PWD}/data/synapse:/data
+      - ${PWD}/config/synapse:/conf
+    command: ["run", "-m", "synapse.app.generic_worker", "--config-path", "/conf/homeserver.yaml", "--config-path", "/conf/account_data_worker.yaml"]
+    expose:
+      - "8090"
+      - "9101"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8090/_matrix/client/versions || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -250,9 +526,21 @@ services:
     depends_on:
       synapse:
         condition: service_healthy
-      synapse-worker-1:
+      synapse-event-persister:
         condition: service_healthy
-      synapse-worker-2:
+      synapse-typing-worker:
+        condition: service_healthy
+      synapse-to-device-worker:
+        condition: service_healthy
+      synapse-presence-worker:
+        condition: service_healthy
+      synapse-receipts-worker:
+        condition: service_healthy
+      synapse-push-rules-worker:
+        condition: service_healthy
+      synapse-device-lists-worker:
+        condition: service_healthy
+      synapse-account-data-worker:
         condition: service_healthy
       nginx:
         condition: service_healthy
@@ -295,11 +583,10 @@ services:
       start_period: 30s
     # Use sleep to keep container running for interactive testing
     command: sleep infinity
-    # Original automated command (uncomment to run tests without UI):
-    # command: >
-    #   python run.py
-    #   /test/synapse-simple-test.json
-    #   --host http://synapse:8008
+    # # Web UI mode
+    # command: poetry run locust -f locust-run-users.py --host=http://nginx:80 --web-host=0.0.0.0 --web-port=8089
+    # # Automated suite mode
+    # command: python run.py /test/synapse-simple-test.json --host http://nginx:80
     logging:
       driver: ${LOGS_DRIVER:-json-file}
       options:

@@ -1,0 +1,18 @@
+worker_app: synapse.app.generic_worker
+worker_name: to_device_worker
+run_background_updates: false
+
+worker_listeners:
+  - port: 8085
+    type: http
+    x_forwarded: true
+    bind_addresses: ['0.0.0.0']
+    resources:
+      - names: [client]
+        compress: false
+  - port: 9096
+    type: http
+    bind_addresses: ['0.0.0.0']
+    resources:
+      - names: [replication]
+        compress: false
