@@ -49,8 +49,9 @@ services:
       - matrix-network
     volumes:
       - ${PWD}/data/redis:/data
+    command: redis-server --bind 0.0.0.0
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -h 127.0.0.1 ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -92,7 +93,7 @@ services:
   synapse:
     build:
       context: .
-      dockerfile: ./config/synapse/Dockerfile.synapse
+      dockerfile: ./config/synapse/Dockerfile.custom
     image: ${SYNAPSE_IMAGE:-matrixdotorg/synapse:latest}
     container_name: synapse-homeserver
     user: "${SYNAPSE_UID:-1000}:${SYNAPSE_GID:-1000}"
@@ -139,7 +140,7 @@ services:
   synapse-worker-1:
     build:
       context: .
-      dockerfile: ./config/synapse/Dockerfile.synapse
+      dockerfile: ./config/synapse/Dockerfile.custom
     image: ${SYNAPSE_IMAGE:-matrixdotorg/synapse:latest}
     container_name: synapse-worker-1
     user: "${SYNAPSE_UID:-1000}:${SYNAPSE_GID:-1000}"
@@ -156,6 +157,7 @@ services:
       otel-collector:
         condition: service_started
     environment:
+      SYNAPSE_WORKER: synapse.app.generic_worker
       SYNAPSE_CONFIG_DIR: ${SYNAPSE_CONFIG_DIR:-/conf}
       SYNAPSE_CONFIG_PATH: ${SYNAPSE_CONFIG_PATH:-/conf/generic_worker_1.yaml}
       SYNAPSE_SERVER_NAME: ${SYNAPSE_SERVER_NAME:-matrix.local}
@@ -171,7 +173,7 @@ services:
     ports:
       - "8081:8081"
     healthcheck:
-      test: ["CMD-SHELL", "ps aux | grep -q '[p]ython.*generic_worker' || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8081/_matrix/client/versions || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -186,7 +188,7 @@ services:
   synapse-worker-2:
     build:
       context: .
-      dockerfile: ./config/synapse/Dockerfile.synapse
+      dockerfile: ./config/synapse/Dockerfile.custom
     image: ${SYNAPSE_IMAGE:-matrixdotorg/synapse:latest}
     container_name: synapse-worker-2
     user: "${SYNAPSE_UID:-1000}:${SYNAPSE_GID:-1000}"
@@ -203,6 +205,7 @@ services:
       otel-collector:
         condition: service_started
     environment:
+      SYNAPSE_WORKER: synapse.app.generic_worker
       SYNAPSE_CONFIG_DIR: ${SYNAPSE_CONFIG_DIR:-/conf}
       SYNAPSE_CONFIG_PATH: ${SYNAPSE_CONFIG_PATH:-/conf/generic_worker_2.yaml}
       SYNAPSE_SERVER_NAME: ${SYNAPSE_SERVER_NAME:-matrix.local}
@@ -218,7 +221,7 @@ services:
     ports:
       - "8082:8082"
     healthcheck:
-      test: ["CMD-SHELL", "ps aux | grep -q '[p]ython.*generic_worker' || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8082/_matrix/client/versions || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5

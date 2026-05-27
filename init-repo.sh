@@ -28,3 +28,9 @@ git clone git@github.com:circles-project/matrix-locust.git
 # docker compose -p matrix-stack -f matrix-docker-ansible-deploy/docker-compose.yml up --force-recreate --remove-orphans --detach
 # echo "Starting OpenTelemetry Demo from docker compose" 
 # docker compose -p matrix-stack -f opentelemetry-demo/docker-compose.yml up --force-recreate --remove-orphans --detach
+
+
+sudo cp -f -r matrix-locust-mod/. matrix-locust/
+./setup-matrix-stack.sh init
+
+# ./setup-matrix-stack.sh start

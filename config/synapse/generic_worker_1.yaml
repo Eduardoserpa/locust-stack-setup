@@ -1,16 +1,22 @@
 # Synapse Generic Worker Configuration - Worker 1
-# This worker inherits base configuration from homeserver.yaml
+# All necessary settings included (no external includes for compatibility)
 
-# Include the base homeserver configuration
-include:
-  - homeserver.yaml
+# Server identity
+server_name: "matrix.local"
+public_baseurl: "http://synapse:8008/"
 
-# Worker-specific settings
+# Macaroon secret key (required)
+macaroon_secret_key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+
+# Worker app configuration
 worker_app: synapse.app.generic_worker
 worker_name: worker_1
 
+# Disable background updates on workers (only main process should run these)
+run_background_updates: false
+
 # HTTP listener for this worker (unique port)
-listeners:
+worker_listeners:
   - port: 8081
     type: http
     bind_addresses: ['0.0.0.0']
@@ -23,6 +29,30 @@ replication:
   worker_replication_host: synapse
   worker_replication_port: 9093
   worker_replication_http_scheme: http
+
+# Database configuration
+database:
+  name: psycopg2
+  args:
+    user: synapse
+    password: 654321
+    database: synapse
+    host: postgres
+    port: 5432
+    cp_min: 10
+    cp_max: 10
+
+# Redis configuration for caching and replication
+redis:
+  enabled: true
+  host: redis
+  port: 6379
+
+# Instance map for replication (must include 'main' for worker connections)
+instance_map:
+  main:
+    host: synapse
+    port: 9093
 
 # Logging configuration
 logging:
@@ -41,3 +71,55 @@ logging:
   root:
     handlers: [console]
     level: INFO
+
+# Configuration options for compatibility
+report_stats: false
+default_to_encrypted: false
+enable_registration: true
+registration_requires_token: false
+enable_registration_without_verification: true
+
+# Media repository
+media_store_path: "/data/media_store"
+
+# Retention policy
+retention:
+  enabled: false
+
+# Account validity
+account_validity:
+  enabled: false
+
+# Password config
+password_config:
+  enabled: true
+
+# TLS disabled for local testing
+tls_certificate_path: null
+
+# Presence tracking
+use_presence: true
+
+# Appservice config
+app_service_config_files: []
+
+# Rate limiting for load testing
+rc_login:
+  address:
+    per_second: 1000
+    burst_count: 100000
+  account:
+    per_second: 1000
+    burst_count: 100000
+  failed_attempts:
+    per_second: 1000
+    burst_count: 100000
+
+rc_registration:
+  per_second: 1000
+  burst_count: 100000
+
+rc_create_room:
+  per_second: 1000
+  burst_count: 100000
+

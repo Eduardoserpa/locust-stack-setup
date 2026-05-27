@@ -1,0 +1,10 @@
+# Custom Dockerfile that inherits from official Synapse image and adds our config files
+FROM matrixdotorg/synapse:latest
+
+# Copy our custom configuration files
+COPY ./config/synapse/homeserver.yaml /conf/homeserver.yaml
+COPY ./config/synapse/generic_worker_1.yaml /conf/generic_worker_1.yaml
+COPY ./config/synapse/generic_worker_2.yaml /conf/generic_worker_2.yaml
+
+# Set working directory
+WORKDIR /data

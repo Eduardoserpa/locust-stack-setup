@@ -195,12 +195,17 @@ start_stack() {
     
     log_info "Starting containers..."
     
+    # Start in detached mode to allow healthchecks to complete
+    if docker compose -p matrix-stack -f "${COMPOSE_FILE}" --env-file "${ENV_FILE}" up -d; then
     # if docker compose -p matrix-stack -f "${COMPOSE_FILE}" --env-file "${ENV_FILE}" up --watch; then
-    if docker compose -p matrix-stack -f "${COMPOSE_FILE}" --env-file "${ENV_FILE}" up; then
-        log_success "Stack started successfully"
+        log_success "Stack containers launched"
         
-        log_info "Waiting for services to become healthy..."
-        sleep 15
+        # log_info "Waiting for services to become healthy (this may take up to 60 seconds)..."
+        # sleep 60
+        
+        # Verify worker health status
+        log_info "Checking Synapse worker health status..."
+        docker ps --format "{{.Names}}\t{{.Status}}" 2>&1 | grep synapse
         
         log_section "Service Access Points"
         echo -e "  ${BLUE}Synapse${NC} (Matrix Homeserver)"
