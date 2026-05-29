@@ -23,4 +23,4 @@ RUN mkdir -p /app/data/results
 EXPOSE 8089
 
 # Run Locust with simple test
-CMD ["python", "run.py", "/test/synapse-simple-test.json", "--host", "http://synapse:8008"]
+CMD ["python", "run.py", "/test/synapse-simple-test.json", "--host", "http://nginx:80"]

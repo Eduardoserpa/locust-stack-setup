@@ -21,7 +21,7 @@ env = Environment()
 
 class TestMatrixUser(FastHttpUser):
     """Simple test user for registration"""
-    host = "http://synapse:8008"
+    host = "http://nginx:80"
     wait_time = constant(0)
     
     def on_start(self):

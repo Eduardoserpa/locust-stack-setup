@@ -323,7 +323,7 @@ PSQL_EOF
     rm -f "${test_output_file}"
     docker compose -p matrix-stack exec -T locust poetry run python -m locust \
         -f matrix_locust/client_server/register.py \
-        --host=http://synapse:8008 \
+        --host=http://nginx:80 \
         --headless --users=${test_users} --spawn-rate=${spawn_rate} --run-time=${run_time} > "${test_output_file}" 2>&1 &
     
     local locust_pid=$!
